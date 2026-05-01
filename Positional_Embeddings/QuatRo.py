@@ -57,6 +57,12 @@ def _normalize_pos(pos, P, expected_M, name):
     raise ValueError(f"{name}: pos must be [P,M] or [B,P,M], got {tuple(pos.shape)}.")
 
 
+def _random_unit_axes_M(M, heads, d_size):
+    """M random unit 3-vectors, shape [M, H, 1, d, 3]."""
+    v = torch.randn(M, heads, 1, d_size, 3)
+    return v / v.norm(dim=-1, keepdim=True)
+
+
 # ============================================================
 # QuatRo — per-head learned 3-vector "axes" (magnitude * direction)
 # ============================================================
@@ -64,9 +70,10 @@ def _normalize_pos(pos, P, expected_M, name):
 class QuatRo(torch.nn.Module):
     """Quaternion RoPE.
 
-    Per-head learned 3-vector "rotation axes" (magnitude and direction both
+    Per-head learned 3-vector rotation axes (magnitude and direction both
     learned, initialized as random_magnitude * fixed_bivector_axis).
-    Requires `pos_dim == 2` and `D % 3 == 0`.
+    Requires D % 3 == 0.  Accepts any pos_dim M >= 1; for M != 2 the axes
+    are fixed random unit vectors rather than learned parameters.
     """
 
     def __init__(self, embedding_dim, positions=None, pos_dim=2, heads=12):
@@ -77,8 +84,8 @@ class QuatRo(torch.nn.Module):
         if pos_dim is None:
             assert positions is not None, "QuatRo: need `positions` or `pos_dim`."
             pos_dim = positions.size(-1)
-        assert pos_dim == 2, f"QuatRo: pos_dim must be 2, got {pos_dim}."
         self.pos_dim = pos_dim
+        M = pos_dim
         self.H = heads
         assert D % 3 == 0, f"QuatRo: D={D} not divisible by 3."
 
@@ -88,11 +95,19 @@ class QuatRo(torch.nn.Module):
             self.p = None
 
         d_size = D // 3
-        mag_x = torch.rand(heads, 1, d_size, 1)
-        mag_y = torch.rand(heads, 1, d_size, 1)
-        # Initialize directions to principal bivector axes.
-        self.theta_x = torch.nn.Parameter(mag_x * E12.view(1, 1, 1, 3))  # [H, 1, d, 3]
-        self.theta_y = torch.nn.Parameter(mag_y * E31.view(1, 1, 1, 3))
+
+        if M == 2:
+            # Two fully learned bivectors per head (original behaviour).
+            mag_x = torch.rand(heads, 1, d_size, 1)
+            mag_y = torch.rand(heads, 1, d_size, 1)
+            thetas = torch.stack([
+                mag_x * E12.view(1, 1, 1, 3),   # [H, 1, d, 3]
+                mag_y * E31.view(1, 1, 1, 3),
+            ], dim=0)                             # [2, H, 1, d, 3]
+            self.thetas = torch.nn.Parameter(thetas)
+        else:
+            # M fixed random unit axes — not learned.
+            self.register_buffer('thetas', _random_unit_axes_M(M, heads, d_size))
 
     def forward(self, x, pos=None):
         if pos is None:
@@ -101,25 +116,22 @@ class QuatRo(torch.nn.Module):
         return self.apply_rope(x, pos)
 
     def set_positions(self, pos):
-        device = self.theta_x.device
+        device = self.thetas.device
         pos = pos.to(device)
         if isinstance(getattr(self, 'p', None), torch.Tensor):
             self.p = pos
         else:
             self.register_buffer('p', pos)
 
-    def get_frequencies(self):
-        return self.theta_x, self.theta_y
-
     def apply_rope(self, z, pos):
         """
         z   : [B, H, P, D]   (D % 3 == 0; N must equal heads)
-        pos : [P, 2] or [B, P, 2]
+        pos : [P, M] or [B, P, M]
         returns: [B, H, P, D]
         """
         assert z.dim() == 4, f"QuatRo: expected z=[B,H,P,D], got {tuple(z.shape)}."
         B, N, P, D = z.shape
-        H = self.H
+        H, M = self.H, self.pos_dim
         assert N == H, f"QuatRo: z heads N={N} != heads={H}."
         assert D == self.embedding_dim, (
             f"QuatRo: z D={D} != embedding_dim={self.embedding_dim}."
@@ -127,17 +139,17 @@ class QuatRo(torch.nn.Module):
         assert D % 3 == 0, f"QuatRo: D={D} not divisible by 3."
         d_size = D // 3
 
-        pos, _ = _normalize_pos(pos, P, 2, "QuatRo")  # [B_or_1, 1, P, 2]
-        pos_x = pos[..., 0:1].unsqueeze(-1)  # [B_or_1, 1, P, 1, 1]
-        pos_y = pos[..., 1:2].unsqueeze(-1)
+        pos, _ = _normalize_pos(pos, P, M, "QuatRo")  # [B_or_1, 1, P, M]
 
-        # rotation 3-vectors: [B_or_1, H, P, d, 3]
-        rot_x = pos_x * self.theta_x.view(1, H, 1, d_size, 3)
-        rot_y = pos_y * self.theta_y.view(1, H, 1, d_size, 3)
-
-        R_x = exp_pure_quaternion(rot_x / 2.0)  # [..., 4]
-        R_y = exp_pure_quaternion(rot_y / 2.0)
-        R = quaternion_multiply(R_x, R_y)       # [B_or_1, H, P, d, 4]
+        # Compose rotors left-to-right: R_0 * R_1 * ... * R_{M-1}.
+        # For M==2 this reproduces the original quaternion_multiply(R_x, R_y).
+        R = None
+        for m in range(M):
+            pos_m = pos[..., m:m+1].unsqueeze(-1)              # [B_or_1, 1, P, 1, 1]
+            theta_m = self.thetas[m].view(1, H, 1, d_size, 3)  # [1, H, 1, d, 3]
+            rot_m = pos_m * theta_m                             # [B_or_1, H, P, d, 3]
+            R_m = exp_pure_quaternion(rot_m / 2.0)
+            R = R_m if R is None else quaternion_multiply(R, R_m)
 
         z = z.view(B, H, P, d_size, 3)
         z_rot = rotor_apply(R, z)
@@ -152,11 +164,9 @@ class _FixedAxisQuatRo(torch.nn.Module):
     """Shared implementation for Mixed_QuatRo and Spherical_QuatRo.
 
     Per-head learned scalar magnitudes; bivector directions are fixed buffers.
-    Subclasses pick the (axis_x, axis_y) 3-vectors.
+    For M==2 subclasses pick the (axis_x, axis_y) 3-vectors; for M!=2
+    M random unit axes are used instead.
     """
-
-    axis_x: torch.Tensor  # set by subclass
-    axis_y: torch.Tensor
 
     def __init__(self, embedding_dim, positions=None, pos_dim=2, heads=6,
                  axis_x=E12, axis_y=E12):
@@ -169,10 +179,8 @@ class _FixedAxisQuatRo(torch.nn.Module):
                 f"{type(self).__name__}: need `positions` or `pos_dim`."
             )
             pos_dim = positions.size(-1)
-        assert pos_dim == 2, (
-            f"{type(self).__name__}: pos_dim must be 2, got {pos_dim}."
-        )
         self.pos_dim = pos_dim
+        M = pos_dim
         self.H = heads
         assert D % 3 == 0, f"{type(self).__name__}: D={D} not divisible by 3."
 
@@ -182,12 +190,17 @@ class _FixedAxisQuatRo(torch.nn.Module):
             self.p = None
 
         d_size = D // 3
-        # Per-head learned magnitudes (scalar per pair).
-        self.theta_x = torch.nn.Parameter(torch.rand(heads, 1, d_size, 1))  # [H,1,d,1]
-        self.theta_y = torch.nn.Parameter(torch.rand(heads, 1, d_size, 1))
+        self.magnitudes = torch.nn.Parameter(torch.rand(M, heads, 1, d_size, 1))
 
-        self.register_buffer('x', axis_x.view(1, 1, 1, 3).clone())
-        self.register_buffer('y', axis_y.view(1, 1, 1, 3).clone())
+        if M == 2:
+            ax = torch.stack([
+                axis_x.view(1, 1, 1, 3),
+                axis_y.view(1, 1, 1, 3),
+            ], dim=0)                            # [2, 1, 1, 1, 3]
+        else:
+            v = torch.randn(M, 1, 1, 1, 3)
+            ax = v / v.norm(dim=-1, keepdim=True)
+        self.register_buffer('axes', ax)
 
     def forward(self, x, pos=None):
         if pos is None:
@@ -198,21 +211,18 @@ class _FixedAxisQuatRo(torch.nn.Module):
         return self.apply_rope(x, pos)
 
     def set_positions(self, pos):
-        device = self.theta_x.device
+        device = self.magnitudes.device
         pos = pos.to(device)
         if isinstance(getattr(self, 'p', None), torch.Tensor):
             self.p = pos
         else:
             self.register_buffer('p', pos)
 
-    def get_frequencies(self):
-        return self.theta_x, self.theta_y
-
     def apply_rope(self, z, pos):
         name = type(self).__name__
         assert z.dim() == 4, f"{name}: expected z=[B,H,P,D], got {tuple(z.shape)}."
         B, N, P, D = z.shape
-        H = self.H
+        H, M = self.H, self.pos_dim
         assert N == H, f"{name}: z heads N={N} != heads={H}."
         assert D == self.embedding_dim, (
             f"{name}: z D={D} != embedding_dim={self.embedding_dim}."
@@ -220,21 +230,18 @@ class _FixedAxisQuatRo(torch.nn.Module):
         assert D % 3 == 0, f"{name}: D={D} not divisible by 3."
         d_size = D // 3
 
-        pos, _ = _normalize_pos(pos, P, 2, name)
-        pos_x = pos[..., 0:1].unsqueeze(-1)  # [B_or_1, 1, P, 1, 1]
-        pos_y = pos[..., 1:2].unsqueeze(-1)
+        pos, _ = _normalize_pos(pos, P, M, name)  # [B_or_1, 1, P, M]
 
-        # rotation 3-vectors: pos * magnitude * axis  ->  [B_or_1, H, P, d, 3]
-        mag_x = self.theta_x.view(1, H, 1, d_size, 1)
-        mag_y = self.theta_y.view(1, H, 1, d_size, 1)
-        ax_x = self.x.view(1, 1, 1, 1, 3)
-        ax_y = self.y.view(1, 1, 1, 1, 3)
-        rot_x = pos_x * mag_x * ax_x
-        rot_y = pos_y * mag_y * ax_y
-
-        R_x = exp_pure_quaternion(rot_x / 2.0)
-        R_y = exp_pure_quaternion(rot_y / 2.0)
-        R = quaternion_multiply(R_x, R_y)
+        # Compose rotors left-to-right: R_0 * R_1 * ... * R_{M-1}.
+        # For M==2 this reproduces the original quaternion_multiply(R_x, R_y).
+        R = None
+        for m in range(M):
+            pos_m = pos[..., m:m+1].unsqueeze(-1)              # [B_or_1, 1, P, 1, 1]
+            mag_m = self.magnitudes[m].view(1, H, 1, d_size, 1)
+            ax_m = self.axes[m].view(1, 1, 1, 1, 3)
+            rot_m = pos_m * mag_m * ax_m                       # [B_or_1, H, P, d, 3]
+            R_m = exp_pure_quaternion(rot_m / 2.0)
+            R = R_m if R is None else quaternion_multiply(R, R_m)
 
         z = z.view(B, H, P, d_size, 3)
         z_rot = rotor_apply(R, z)
