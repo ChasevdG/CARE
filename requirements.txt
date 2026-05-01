@@ -1,0 +1,7 @@
+# Core
+torch>=2.1.0
+triton>=2.1.0          # GPU-accelerated Clifford kernels; requires CUDA
+
+# Notebook visualisation (optional)
+jupyter
+matplotlib
