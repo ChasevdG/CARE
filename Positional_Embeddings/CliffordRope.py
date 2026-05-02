@@ -219,17 +219,17 @@ class Spherical_CARE(_VectorCARE):
         M = self.pos_dim
         H = self.H
 
-        self.magnitudes = torch.nn.Parameter(torch.rand(M, H, 1, d, 1)).to(e12.device)
+        self.magnitudes = torch.nn.Parameter(torch.rand(M, H, 1, d, 1))
 
         if M == 2:
             ax = torch.stack([
                 e12.get_bivector().view(1, 1, 1, 3),
                 e31.get_bivector().view(1, 1, 1, 3),
-            ], dim=0)                                   # [2, 1, 1, 1, 3]
+            ], dim=0)                                 # [2, 1, 1, 1, 3]
         else:
             v = torch.randn(M, 1, 1, 1, 3)
             ax = v / v.norm(dim=-1, keepdim=True)       # [M, 1, 1, 1, 3]
-        self.register_buffer('axes', ax)
+        self.register_buffer('axes', ax.to(self.magnitudes))
 
     def _get_bivector_m(self, m, pos_m, H, d):
         mag_m = self.magnitudes[m].view(1, H, 1, d, 1)
@@ -247,7 +247,7 @@ class Mixed_CARE(_VectorCARE):
         M = self.pos_dim
         H = self.H
 
-        self.magnitudes = torch.nn.Parameter(torch.rand(M, H, 1, d, 1)).to(e12.device)
+        self.magnitudes = torch.nn.Parameter(torch.rand(M, H, 1, d, 1))
 
         if M == 2:
             e12_vec = e12.get_bivector().view(1, 1, 1, 3)
@@ -255,7 +255,7 @@ class Mixed_CARE(_VectorCARE):
         else:
             v = torch.randn(M, 1, 1, 1, 3)
             ax = v / v.norm(dim=-1, keepdim=True)
-        self.register_buffer('axes', ax)
+        self.register_buffer('axes', ax.to(self.magnitudes))
 
     def _get_bivector_m(self, m, pos_m, H, d):
         mag_m = self.magnitudes[m].view(1, H, 1, d, 1)
