@@ -219,7 +219,7 @@ class Spherical_CARE(_VectorCARE):
         M = self.pos_dim
         H = self.H
 
-        self.magnitudes = torch.nn.Parameter(torch.rand(M, H, 1, d, 1))
+        self.magnitudes = torch.nn.Parameter(torch.rand(M, H, 1, d, 1)).to(e12.device)
 
         if M == 2:
             ax = torch.stack([
@@ -247,7 +247,7 @@ class Mixed_CARE(_VectorCARE):
         M = self.pos_dim
         H = self.H
 
-        self.magnitudes = torch.nn.Parameter(torch.rand(M, H, 1, d, 1))
+        self.magnitudes = torch.nn.Parameter(torch.rand(M, H, 1, d, 1)).to(e12.device)
 
         if M == 2:
             e12_vec = e12.get_bivector().view(1, 1, 1, 3)

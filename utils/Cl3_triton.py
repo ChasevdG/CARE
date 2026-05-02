@@ -5,12 +5,15 @@ try:
     from triton import language as tl
     TRITON_AVAILABLE = True
     from utils.Triton_Kernels.geometric_product import Cl3_GP
-    from utils.Triton_Kernels.sandwich_product import Cl3_Sandwich
+    from utils.Triton_Kernels.sandwich_product import _Cl3SandwichFn as Cl3_Sandwich
 except ImportError:
     print("Triton not available, falling back to pure PyTorch implementation.")
     TRITON_AVAILABLE = False
+import triton
+from triton import language as tl
 
-
+from utils.Triton_Kernels.geometric_product import Cl3_GP
+from utils.Triton_Kernels.sandwich_product import _Cl3SandwichFn as Cl3_Sandwich
 
 import torch
 import threading
@@ -32,12 +35,8 @@ class Cl3_triton:
 
     @staticmethod
     def _init_gp_tensor():
-        """Precompute geometric product tables (8×8) without Python loops.
-
-        This version computes both the target blade indices and the signs
-        using pure tensor ops and bitwise arithmetic:
-          - index(i,j) = i XOR j
-          - sign(i,j)  = (-1)^{\sum_k [bit_k(i)] * popcount(bits < k of j)}
+        """
+        Precompute geometric product tables (8×8) without Python loops.
         """
         # i, j in [0..7] encode the basis blade bitmasks
         i = torch.arange(8, dtype=torch.long)            # (8,)
@@ -164,7 +163,8 @@ class Cl3_triton:
             B = other.data
             A_b, B_b = torch.broadcast_tensors(A, B)
             
-            out = Cl3_Sandwich.apply(A_b, B_b, use_reversion=use_reversion)
+            mode = 'reversion' if use_reversion else 'inverse'
+            out = Cl3_Sandwich.apply(A_b, B_b, mode)
             return Cl3_triton(out)
         # Throw error if other is not Cl3
         return NotImplemented

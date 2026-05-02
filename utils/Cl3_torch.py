@@ -1,6 +1,4 @@
 import torch
-from utils.Triton_Kernels.geometric_product import Cl3_GP
-from utils.Triton_Kernels.sandwich_product import Cl3_Sandwich
 
 class Cl3:
     """
