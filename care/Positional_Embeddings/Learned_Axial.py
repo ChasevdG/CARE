@@ -11,7 +11,7 @@ class Learned_Axial_RoPE(nn.Module):
     """
 
     def __init__(self, embedding_dim, positions=None, pos_dim=None,
-                 heads=6, uniform_freq=False):
+                 heads=6, uniform_freq=False, initialization="random", max_freq=100.0, init_scale=1.0):
         super().__init__()
 
         D = embedding_dim
@@ -37,13 +37,20 @@ class Learned_Axial_RoPE(nn.Module):
             self.p = None
 
         d_pair = D // (2 * M)
-
+        grad = True
         # Per-head learned frequencies: [H, M, d_pair]
         if uniform_freq:
             init = torch.full((heads, M, d_pair), 1.0 / math.pi)
+            grad = False
         else:
-            init = torch.rand(heads, M, d_pair)
-        self.freq = nn.Parameter(init, requires_grad=True)
+            if initialization == "random":
+                init = torch.rand(heads, M, d_pair) * init_scale
+            elif initialization == "uniform":
+                init = torch.ones(heads, M, d_pair) * 1.0 / math.pi
+            else:
+                inv_freq = 1.0 / (max_freq ** (torch.arange(0, d_pair, 1.0) / d_pair))
+                init = inv_freq.repeat(heads, M, 1)
+        self.freq = nn.Parameter(init, requires_grad=grad)
 
     def forward(self, x, pos=None):
         if pos is None:

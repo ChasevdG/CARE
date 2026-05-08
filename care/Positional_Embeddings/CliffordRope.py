@@ -45,7 +45,7 @@ def _random_unit_bivectors(M, heads, d_size):
 
 class CARE(torch.nn.Module):
     def __init__(self, embedding_dim, positions=None, pos_dim=2,
-                 heads=12, scale=1.0, random_init=True, uniform_freq=False):
+                 heads=12, init_scale=1.0, initialization="random", max_freq=100.0):
         super().__init__()
         D = embedding_dim
         self.embedding_dim = D
@@ -56,7 +56,7 @@ class CARE(torch.nn.Module):
         self.pos_dim = pos_dim
         M = pos_dim
         self.H = heads
-        self.scale = scale
+        self.scale = init_scale
 
         assert D % 8 == 0, "CARE: D must be divisible by 8"
         self._d_size = D // 8
@@ -70,7 +70,7 @@ class CARE(torch.nn.Module):
         if M == 2:
             # Two fully learned bivectors per head (original behaviour).
             mag = torch.rand(2, heads, 1, d, 1)
-            if random_init:
+            if initialization == "random":
                 ax = _random_unit_bivectors(2, heads, d)           # [2, H, 1, d, 3]
             else:
                 ax = torch.stack([

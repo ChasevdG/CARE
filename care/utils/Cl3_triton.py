@@ -9,11 +9,6 @@ try:
 except ImportError:
     print("Triton not available, falling back to pure PyTorch implementation.")
     TRITON_AVAILABLE = False
-import triton
-from triton import language as tl
-
-from .Triton_Kernels.geometric_product import Cl3_GP
-from .Triton_Kernels.sandwich_product import _Cl3SandwichFn as Cl3_Sandwich
 
 import torch
 import threading

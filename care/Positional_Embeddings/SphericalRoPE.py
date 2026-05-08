@@ -12,7 +12,7 @@ class Spherical_RoPE(torch.nn.Module):
     Requires `pos_dim == 2` (yaw, roll) and `D % 3 == 0`.
     """
 
-    def __init__(self, embedding_dim, positions=None, pos_dim=2, heads=None):
+    def __init__(self, embedding_dim, positions=None, pos_dim=2, heads=None, init_scale=1.0, initialization="random", max_freq=100.0):
         super().__init__()
 
         D = embedding_dim
@@ -33,7 +33,7 @@ class Spherical_RoPE(torch.nn.Module):
 
         d_triple = D // 3
         d = torch.arange(d_triple, dtype=torch.float32)
-        theta_d = 100.0 ** (-2.0 * d / D)  # [d_triple]
+        theta_d = max_freq ** (-2.0 * d / D)  # [d_triple]
         self.register_buffer('theta_d', theta_d)
 
     def forward(self, x, pos=None):

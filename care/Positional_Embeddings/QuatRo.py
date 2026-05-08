@@ -76,7 +76,7 @@ class QuatRo(torch.nn.Module):
     are fixed random unit vectors rather than learned parameters.
     """
 
-    def __init__(self, embedding_dim, positions=None, pos_dim=2, heads=12):
+    def __init__(self, embedding_dim, positions=None, pos_dim=2, heads=12, init_scale=1.0, initialization="random", max_freq=100.0):
         super().__init__()
         D = embedding_dim
         self.embedding_dim = D
@@ -96,18 +96,21 @@ class QuatRo(torch.nn.Module):
 
         d_size = D // 3
 
-        if M == 2:
+        if M == 2 and initialization != "random":
             # Two fully learned bivectors per head (original behaviour).
-            mag_x = torch.rand(heads, 1, d_size, 1)
-            mag_y = torch.rand(heads, 1, d_size, 1)
+            inv_freq = 1.0 / (max_freq ** (torch.arange(0, d_size, 1.0) / d_size)) # [d_size]
+            inv_freq = inv_freq.view(1, 1, d_size,1) # [1, 1, 1, d_size]
+            inv_freq = inv_freq.repeat(heads, 1, 1, 1) # [H, 1, d_size, 1]
             thetas = torch.stack([
-                mag_x * E12.view(1, 1, 1, 3),   # [H, 1, d, 3]
-                mag_y * E31.view(1, 1, 1, 3),
+                inv_freq * E12.view(1, 1, 1, 3),   # [H, 1, d, 3]
+                inv_freq * E31.view(1, 1, 1, 3),
             ], dim=0)                             # [2, H, 1, d, 3]
             self.thetas = torch.nn.Parameter(thetas)
         else:
-            # M fixed random unit axes — not learned.
-            self.register_buffer('thetas', _random_unit_axes_M(M, heads, d_size))
+            thetas = _random_unit_axes_M(M, heads, d_size)
+            mag = torch.rand(M, heads, 1, d_size, 1) * init_scale
+            thetas = thetas * mag # [M, H, 1, d, 3]
+            self.thetas = torch.nn.Parameter(thetas, requires_grad=True)
 
     def forward(self, x, pos=None):
         if pos is None:

@@ -16,7 +16,7 @@ class Mixed_RoPE(nn.Module):
     Per-head learned frequencies; `D` must be divisible by 2.
     """
 
-    def __init__(self, embedding_dim, positions=None, pos_dim=None, heads=12):
+    def __init__(self, embedding_dim, positions=None, pos_dim=None, heads=12, max_freq=100.0, initialization="random", init_scale=1.0):
         super().__init__()
 
         D = embedding_dim
@@ -40,7 +40,13 @@ class Mixed_RoPE(nn.Module):
 
         d_pair = D // 2
         # Per-head learned frequencies, one per (axis, channel-pair): [H, M, d_pair]
-        self.freq = nn.Parameter(torch.rand(heads, M, d_pair))
+        if initialization == "random":
+            self.freq = nn.Parameter(torch.rand(heads, M, d_pair) * init_scale, requires_grad=True)
+        elif initialization == "uniform":
+            self.freq = nn.Parameter(torch.ones(heads, M, d_pair) * max_freq, requires_grad=True)
+        else:
+            inv_freq = 1.0 / (max_freq ** (torch.arange(0, d_pair, 1.0) / d_pair))
+            self.freq = nn.Parameter(inv_freq.repeat(heads, M, 1), requires_grad=True)
 
     def forward(self, x, pos=None):
         if pos is None:

@@ -6,7 +6,7 @@ from ..PE_registry import register_PE, PE_REGISTRY
 class Axial_RoPE(torch.nn.Module):
     """Axial Rotary Position Embedding for arbitrary-dimensional positions."""
 
-    def __init__(self, embedding_dim, positions=None, pos_dim=None, uniform_freq=False, heads=None):
+    def __init__(self, embedding_dim, positions=None, pos_dim=None, uniform_freq=False, heads=None, init_scale=1.0, initialization="random", max_freq=100.0):
         super().__init__()
 
         D = embedding_dim
@@ -33,7 +33,7 @@ class Axial_RoPE(torch.nn.Module):
         if uniform_freq:
             theta_d = torch.full((d_pair,), 1.0 / math.pi)
         else:
-            theta_d = 100.0 ** (-2.0 * d / D)
+            theta_d = max_freq ** (-2.0 * d / D)
 
         self.register_buffer('theta_d', theta_d)
         self.uniform_freq = uniform_freq
@@ -104,6 +104,3 @@ class Uniform_Axial_RoPE(Axial_RoPE):
 
 register_PE(
         "Axial RoPE", Axial_RoPE)
-register_PE(
-        "Uniform Axial RoPE", Uniform_Axial_RoPE
-    )
