@@ -1,0 +1,10 @@
+
+**/__pycache__/
+# package files and folders
+*.egg-info/
+*.egg-info
+build/
+dist/
+*.html
+
+

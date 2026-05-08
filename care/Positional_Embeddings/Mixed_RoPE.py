@@ -1,6 +1,6 @@
 import torch
 from math import pi, sqrt
-from PE_registry import PE_REGISTRY, register_PE
+from ..PE_registry import PE_REGISTRY, register_PE
 
 import math
 import torch

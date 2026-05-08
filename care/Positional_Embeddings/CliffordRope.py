@@ -1,9 +1,9 @@
 import torch
 from math import pi, sqrt
-from PE_registry import PE_REGISTRY, register_PE
+from ..PE_registry import PE_REGISTRY, register_PE
 
-from utils.Cl3_triton import Cl3_triton as Cl3
-from utils.Cl3_triton import e12, e31
+from ..utils.Cl3_triton import Cl3_triton as Cl3
+from ..utils.Cl3_triton import e12, e31
 
 
 # ---------------------------------------------------------------------

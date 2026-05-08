@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from PE_registry import register_PE, PE_REGISTRY
+from ..PE_registry import register_PE, PE_REGISTRY
 from math import pi
 import math
 

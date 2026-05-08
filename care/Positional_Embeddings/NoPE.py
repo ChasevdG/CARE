@@ -1,5 +1,5 @@
 import torch
-from PE_registry import PE_REGISTRY, register_PE
+from ..PE_registry import PE_REGISTRY, register_PE
 
 class No_PE(torch.nn.Module):
   def __init__(self, embedding_dim, P_x, P_y):

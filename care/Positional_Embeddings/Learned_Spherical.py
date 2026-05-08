@@ -1,5 +1,5 @@
 import torch
-from PE_registry import register_PE, PE_REGISTRY
+from ..PE_registry import register_PE, PE_REGISTRY
 from torch import pi
 
 import math

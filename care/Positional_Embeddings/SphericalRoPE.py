@@ -1,4 +1,4 @@
-from PE_registry import register_PE, PE_REGISTRY
+from ..PE_registry import register_PE, PE_REGISTRY
 import torch
 from torch import pi
 

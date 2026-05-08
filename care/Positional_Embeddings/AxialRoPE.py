@@ -1,7 +1,7 @@
 import torch
 from math import pi, sqrt
 import math
-from PE_registry import register_PE, PE_REGISTRY
+from ..PE_registry import register_PE, PE_REGISTRY
 
 class Axial_RoPE(torch.nn.Module):
     """Axial Rotary Position Embedding for arbitrary-dimensional positions."""
